@@ -1,0 +1,205 @@
+---
+title: "DDD in R Final Project: Wealth Trends"
+author: "Ivy's Documentation Memo"
+date: "January 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, error = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r callScript, echo = FALSE}
+source("DDDR_FinalProject.R")
+```
+
+
+## I. Introduction
+### The Data
+
+The data used in this project was downloaded from the Survey of Consumer Finances (SCF), a triennial cross-sectional survey of U.S. families conducted by the US Federal Reserve Board with cooperation from the US Treasury Department. The website can be found here: <https://www.federalreserve.gov/econres/scfindex.htm>. 
+
+The SCF survey examines balance sheets, pensions, income, and demographic characteristics. This particular data set is comprised of variables including weight, age, sex, income, housing assets, total assets, housing debt, and total debt. The original data extraction is made up of 11 columns and 47,776 rows, and is ordered by date. Here is a summary and an excerpt of first 5 rows of data: 
+```{r Original Wealth Data}
+wealthData[1:5,]
+summary(wealthData)
+```
+### Objectives
+
+I would like to analyze the data to examine how wealth has changed over time as differentiated by race, educational level, and housing. Wealth is herein defined as assets minus liabilities (named "debt" in the original data set). I chose to study wealth rather than income because while there is a lot of focus and discussion on income inequality, wealth inequality is less commonly studied yet arguably severe. Wealth is also an important measure as it essentially represents people's savings and to a certain extent, ability to spend. Someone how earns a high income is not necessarily wealthy (ie. if they have a lot of debt), and someone who is very wealthy doesn't necessarily receive a high income. Thus, this will be a fresh perspective to economic status.
+Racial and educational differences in wealth have always existed and are among the most influential variables. Analysis of this data set will provide a clearer answer to how total wealth and housing wealth among minorities and how the correlation between college attainment and wealth has shifted over the past 30 years. 
+
+### **Primary Questions:**
+**1. What are trends in median wealth as distinguished by race?**
+**2. What are trends in median wealth as distinguished by education? **
+**3. What are trends of housing wealth for homeowners 25+? How did the 2007-8 financial crisis impact housing wealth?**
+
+## II. Processing
+
+### Cleaning Data
+
+While there doesn't seem to be any missing data, there was the question of what to do with zeros as a noteworthy number of respondents received an income but possessed no assets nor liabilities and thus, zeros appeared across their board. This was the same case (and even more frequent) for household wealth. I had to decide whether or not to include them in my analysis and they were part of the reason why I decided to use the measure of median rather than average. 
+A similar decision was to be made with housing wealth: I chose to primarily examine housing wealth of those 25 years or older. That is because the data often showed 0 for both housing assets and liabilities. The very reasonable interpretation is  that they most likely lived with parents and thus are not homeowners themselves. Thus, the zeros would skew housing wealth trends moreso than total wealth, so I decided to use age as a conditional. As a result, there were three less non-zero observations in the final dataframe used to prepare the table and graph.  
+```{r housingAll}
+sum(housing.wealth.by.race.df == 0)
+sum(housing.wealth.by.race.age.df == 0)
+```
+I also renamed variables throughout the code for easier readability and comprehension. The first renaming instances were for columns in the `wealth` dataset. I changed "debt_total" and "debt_housing" to "liability_total" and "liability_housing," for consistency with my original wealth definition. I also renamed several column names in the wealth calculations dataframes, as the `aggregate()` function assigns its own names (Group.1, Group.2 and X).
+
+### Variables
+**Variable Definitions**
+
+Wealth was defined by assets-liabilities. Thus:
+* total_wealth = asset_total - liability_total
+* housing_wealth = asset_housing - liability_housing
+I created these two variables and added them as columns to the `wealth` dataset. These two columns would be referenced the most when calculating median wealth. 
+
+The median is the middle number in a sorted list of numbers (either ascending or descending). Median wealth (both total and housing) was calculated using three different demographics data: race, education, and age. I chose to use median rather than mean because of the aforementioned zeros, which would severely skew average wealth calculations.
+
+**Data Frame Creation**
+
+I created several new dataframes in order to compare wealth and answer my primary questions. The most important of which are: 
+* wealth.by.race.df.table - 10 observations of 5 variables (year, 4 racial categories)
+* wealth.by.education.df.table - 10 observations of 4 variables (year, 4 education levels)
+* housing.wealth.by.race.age.table - 10 obs of 5 variables (year, 4 racial categories)
+                                and were used to create tables. 
+
+### Calculations
+
+There was a three-step process to creating the final ".df.table" dataframes. First, I used the `aggregate()` function to calculate mean:
+```
+wealth.by.race.df <- aggregate(x=wealth$total_wealth, 
+                              by=list(wealth$race,wealth$year.date),
+                              FUN=median)
+```
+
+Then, I used `pivot_wider()` to transpose the dataframe into the right dimensions: 
+```
+wealth.by.race.df.table <- pivot_wider(
+  wealth.by.race.df,
+  id_cols = NULL,
+  names_from = Group.1,
+  values_from = x)
+```
+
+Lastly, I corrected the column names which the `aggregate()` function renamed:
+```
+colnames(wealth.by.race.df.table)[1] <- "Year"
+colnames(wealth.by.race.df.table)[2] <- "Black"
+colnames(wealth.by.race.df.table)[4] <- "Other"
+colnames(wealth.by.race.df.table)[5] <- "White"
+```
+
+Another method would have been to create several more dataframes to compile respective variables,  then concoct or merged them, and then extract necessary data using `group_by()` and then `summarise()`. I seriously considered doing it this way and my initial code contained at least 10 dataframes with each of the different years and variables, but I found it much easier to use the `aggregate()` function as it required less intermediate steps.
+
+** Other Thought Processes **
+  
+I created these 3 main frames because I wanted to firstly compare median total wealth from 1989-2016 in three-year intervals (as the data is every three years) across different racial categories: white, black, Hispanic, and other. Then, I wanted to look at the median wealth differences in education level, which were separated into 3 categories: no college, some college, and college degree (completed). 
+
+I also wanted to examine housing wealth, looking at the same time period and also comparing between race. However, there was an added variable of age here, as previously explained. Thus, I had to find a way to use "if age>25" and combine it with sums of the years. 
+I considered cleaning the data by deleting responses who owned 0 assets and liabilities (same for housing), as their wealth would be 0 as well, bringing down the average by quite a lot, and there were quite a few of these cases. Thus, I used `select()` to filter out all ages below 25, and continued with an aggregate function as shown below: 
+```
+age.greater.than.25 <- wealth %>% 
+  filter(age >= 25)
+housing.wealth.by.race.age.df <- aggregate(x=age.greater.than.25$housing_wealth,
+                                           by=list(age.greater.than.25$race, age.greater.than.25$year.date),
+                                           FUN=median)
+```
+
+
+## III. Analysis
+After creating the proper dataframes with arithmetic, the relevant comparisons could be made. I compared two types of wealth (total wealth and housing wealth) to three different demographics (race, education, and age). Thus, the corresponding tables were created. 
+
+### Table 1: Total Wealth & Race
+```{r Table 1}
+wealth.by.race.df.table %>% 
+  gt(rowname_col = "median wealth") %>% 
+  tab_header(title = "Median Wealth by Race") %>% 
+  fmt_currency(columns = vars(Black, Hispanic, Other, White),
+               currency = "USD")
+```
+**Analysis:** This table shows the the median wealth by year of the four racial demographics. Wealth progress by race is concerning. Black respondents are clearly at a disadvantage as White respondents possess an average of $300,000 more in wealth. The order of the columns is by smallest to largest median wealth. Further analysis is in the conclusion.
+
+### Table 2: Total Wealth & Education
+```{r Table 2}
+wealth.by.education.df.table %>%
+  gt(rowname_col = "median wealth") %>%
+  tab_header(title = "Median Wealth by Education") %>% 
+  fmt_currency(columns = vars("Graduated College", "No College", "Some College"),
+               currency = "USD") %>% 
+  tab_spanner(label = "Education Level",
+              columns = vars("Graduated College", "No College", "Some College")) %>% 
+  cols_move_to_end(columns = vars("Graduated College"))
+```
+**Analysis:** This table depicts a very interesting correlation between education level- as measured by amount of college- and median wealth. It is clear that obtaining a degree ("Graduated College") results more wealth attainment, almost $`=1000000/60000` more. Some college is also effective but not nearly as much as graduating. Further analysis is in the conclusion.
+
+### Table 3: Housing Wealth & Race, with age cond
+```{r Table 3}
+housing.wealth.by.race.age.df.table %>% 
+  gt(rowname_col = "median housing wealth") %>% 
+  fmt_currency(columns = vars(Black, Hispanic, Other, White),
+               currency = "USD") %>% 
+  tab_header(title = "Median Housing Wealth by Race",
+             subtitle = "of those 25 years and older" ) %>% 
+  tab_spanner(label = "Race",
+              columns = vars(Black, Hispanic, Other, White))
+```
+**Analysis:** The last table shows housing wealth (housing assets - housing liabilities). It is shocking to see that even after accounting for age, there are so many zeros. The house wealth trends among race are the same as total wealth race trends, with columns being ordered from least to greatest. It is also interesting to observe the effect of the 2008 financial crisis. Further analysis is in the conclusion.
+
+### Graph 1: Total Wealth & Race
+Graph 1 shows Table 1's data in a more visually comprehensive format, as the trend lines more clearly outline the differences in median wealth between race. 
+```{r Graph 1, echo=FALSE}
+graph1Year <- as.factor(wealth.by.race.df.table$Year)
+ggplot(data = wealth.by.race.df.table,
+       aes(x = graph1Year, y = medianWealth) +
+         geom_line(size = 1) +
+         ggtitle("Median Wealth by Race") +
+         xlab("Year") +
+         ylab("Median Wealth in USD") +
+         scale_x_discrete(name = "Years",
+                   limits = c("1989", "1992", "1995", "1998",
+                              "2001", "2004", "2007","2010", "2013", "2016"))
+       )
+```
+
+
+### Graph 2: Housing Wealth & Race, with age cond
+Graph 2 clearly displays trends in housing wealth as well as the impact of the 2008 financial crisis on housing wealth.
+```{r Graph 2, echo=FALSE}
+graph2Year <- as.factor(housing.wealth.by.race.age.df$Year)
+ggplot(data = housing.wealth.by.race.age.df.table,
+       aes(x = graph2Year, y = medianHousing) +
+         geom_line(size = 1) +
+         ggtitle("Housing Wealth by Race") +
+         xlab("Year") +
+         ylab("Median Wealth in USD") +
+         scale_x_discrete(name = "Years",
+                          limits = c("1989", "1992", "1995", "1998",
+                                     "2001", "2004", "2007","2010", "2013", "2016"))
+       )
+```
+
+## IV. Conclusion
+### Answering the questions
+
+Based on the data analysis and visualization, we can answer the primary questions. 
+
+**1. What are the trends in median wealth as distinguished by race?**
+
+    **A:** There are stark differences in wealth based on the race of the respondent. Black respondents possessed the least amount of total wealth, netting only in the tens of thousands, while Hispanic respondents netted a couple of thousand more. The next gap is much larger gap as "Other" respondents possessed almost $200,000 more. White respondents' median wealth was the highest. The difference between White and Black median wealth in 2016 was $330,875. The difference between those two racial categories in 1989 was $299,704. The wealth gap has barely changed; in fact, the 2016 numbers are almost identical to the 1989 numbers with the exception of the "Other" racial category which has grown $100,000. Graph 1 depicts this continued wealth gap more clearly and it is an alarming observation. The implications will be discussed in the concluding thoughts section.
+
+**2. What are the trends in median wealth as distinguished by race?**
+
+    **A:** College is increasingly important in building wealth. *No College* is significantly detrimental to wealth, as there has been a stead decline in median wealth over the years. The median wealth of those with no college education in 2016 has halved, dropping exactly 50%, from $85,829 to $43,140. *Some College* has also sharply decreased- to more than half of 1989 median wealth; a 58% drop. Meanwhile, *Graduated College* median wealth has actually also decreased. The fall is not nearly as much as the other two educational levels, and this observation may be attributed to more people obtaining degrees and increased competition.
+    
+    It would  be interesting if levels of high school completion were detailed (so those with no college could be analyzed further). Comparing the monetary values to population percentage would also be insightful, as one would be able to match the decreasing median wealth with a proportion of the population and perhaps make some conclusions on educational attainment trends.
+
+**3. What are trends of housing wealth for homeowners 25+? How did the 2007-8 financial crisis impact housing wealth?**
+    
+    **A:** The 2008 financial crisis had a significant impact on housing wealth. From Table 3 and Graph 2, there is a mostly increasing trend for all respondents up until 2007. Then, the next survey in 2010 shows a 50% drop in median wealth for White respondents, and even sharper drops for Hispanic and Other respondents. However, the growth from 2010 - 2016 outpaces 1989-2007 significantly, as Other and White respondents have surpassed previous median wealth. On the other hand, Hispanic and Black respondents are stuck at $0, meaning their housing debt still continues. 
+
+### Concluding Thoughts
+**Ultimately,** both race and educational attainment are key factors in level of wealth. College seems to be the future of building wealth. Black and Hispanic total wealth and housing wealth are shockingly lower than White and Other wealth. Unlike educational attainment- which can provide reasonable explanations for lower or higher wealth as skill-building can lead to higher income and better asset management- the differences in race reveals a concerning pattern of other reasons for the lack of wealth growth and disparity. Factors may include lack of access to financial markets, continued segregation and discrimination, and barriers to human capital accumulation. These reasons are institutional and deeply unfair barriers.  To continue this study, it would be interesting to further explore the relationships between race, education, and wealth using regressions to determine the correlation between certain variables.
+
+**Areas of Improvement & Important Note:** In the future, I will take more time at the very beginning to examine each variable, because the biggest flaw with my analysis is that I realized, only after finishing the project, that the weights column did not mean "how much each respondent weighed"... they meant sampling weights/population representation. I mistook it as a part of demographic data so I deleted it from my "clean" dataframes without much thought wihch is a fatal error as those weights pretty much determine the trends. I only realized that "6859.960" and numbers in the thousands didn't seem to be normal human weights when I opened the original CSV file in Excel to do a last look-over before submitting. I should have multiplied the first column with its corresponding answers to accurately represent the population trends. Going forward, I will be sure to spend more time exploring the data before cleaning and analysis. 
+
